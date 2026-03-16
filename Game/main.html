@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Jump High Game</title>
+	<style>
+		:root {
+			--bg-1: #0f172a;
+			--bg-2: #1e293b;
+			--accent: #38bdf8;
+			--accent-2: #a78bfa;
+			--text: #e2e8f0;
+			--danger: #fb7185;
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			min-height: 100vh;
+			display: grid;
+			place-items: center;
+			background: radial-gradient(circle at 20% 20%, #1d4ed8 0%, var(--bg-1) 35%, #020617 100%);
+			color: var(--text);
+			font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+		}
+
+		.game-wrap {
+			display: grid;
+			gap: 12px;
+			justify-items: center;
+		}
+
+		canvas {
+			border: 2px solid rgba(148, 163, 184, 0.35);
+			border-radius: 14px;
+			background: linear-gradient(180deg, #0b1022 0%, #081226 40%, #040910 100%);
+			box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+		}
+
+		.hud {
+			width: min(92vw, 520px);
+			max-width: 92vw;
+			display: flex;
+			justify-content: space-between;
+			font-weight: 700;
+			letter-spacing: 0.3px;
+		}
+
+		.hint {
+			opacity: 0.86;
+			font-size: 14px;
+			text-align: center;
+			max-width: min(92vw, 520px);
+		}
+	</style>
+</head>
+<body>
+	<div class="game-wrap">
+		<div class="hud">
+			<div>Score: <span id="score">0</span></div>
+			<div>Best: <span id="best">0</span></div>
+		</div>
+		<canvas id="game" width="520" height="700" aria-label="Jump game canvas"></canvas>
+		<div class="hint">Use ← → (or A / D) for left/right aim, or no direction for straight up. Hold Space to charge (position locks). Larger gaps + square platform types make routing harder.</div>
+	</div>
+	<script src="./game.js"></script>
+</body>
+</html>
