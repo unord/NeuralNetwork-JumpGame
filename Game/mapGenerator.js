@@ -10,51 +10,91 @@ window.MapGenerator = (() => {
       settings,
       platforms: [],
       spawnCounter: 0,
-      highestPlatformY: 0
+      highestPlatformY: 0,
+      lastSpawnCenter: width / 2
     };
   }
 
+  function getEnabledSpawnTypes(settings) {
+    const spawn = settings.platformTypes || {};
+    const types = [];
+
+    if (spawn.ledge !== false) types.push('ledge');
+    if (spawn.center !== false) types.push('center');
+    if (spawn.square !== false) types.push('square');
+    if (spawn.movingSquare !== false) types.push('moving-square');
+    if (spawn.icy !== false) types.push('icy');
+    if (spawn.belt !== false) types.push('belt');
+
+    return types.length > 0 ? types : ['ledge'];
+  }
+
   function makePlatform(state, y) {
-    const { settings, width } = state;
-    const slot = state.spawnCounter % 6;
+    const { settings, width, spawnCounter } = state;
+    const enabledTypes = getEnabledSpawnTypes(settings);
+    const type = enabledTypes[Math.floor(Math.random() * enabledTypes.length)];
     state.spawnCounter += 1;
 
     let w;
     let x;
-    let type = 'ledge';
     let vx = 0;
     let h = settings.platformH;
 
-    if (slot === 4) {
-      type = 'square';
+    if (type === 'square') {
       w = rand(settings.squareSizeMin, settings.squareSizeMax);
       x = rand(18, width - w - 18);
       h = w;
-    } else if (slot === 5) {
-      type = 'moving-square';
+    } else if (type === 'moving-square') {
       w = rand(settings.squareSizeMin + 4, settings.squareSizeMax + 6);
       x = rand(18, width - w - 18);
       vx = (Math.random() < 0.5 ? -1 : 1) * rand(0.85, 1.45);
       h = w;
-    } else if (slot === 3) {
-      type = 'center';
+    } else if (type === 'center') {
       w = rand(settings.centerPlatformWMin, settings.centerPlatformWMax);
       x = rand(20, width - w - 20);
       h = rand(settings.ledgeHMin, settings.ledgeHMax);
+    } else if (type === 'icy') {
+      w = rand(settings.icyWMin, settings.icyWMax);
+      const fromLeft = spawnCounter % 2 === 0;
+      x = fromLeft ? 0 : width - w;
+      h = rand(settings.icyHMin, settings.icyHMax);
+    } else if (type === 'belt') {
+      w = rand(settings.beltWMin, settings.beltWMax);
+      x = rand(18, width - w - 18);
+      h = rand(settings.beltHMin, settings.beltHMax);
     } else {
       w = rand(settings.platformWMin, settings.platformWMax);
-      const fromLeft = slot % 2 === 0;
+      const fromLeft = spawnCounter % 2 === 0;
       x = fromLeft ? 0 : width - w;
       h = rand(settings.ledgeHMin, settings.ledgeHMax);
     }
 
-    return { x, y, w, h, type, vx, deltaX: 0 };
+    const edgePadding = 18;
+    const minCenter = w / 2 + edgePadding;
+    const maxCenter = width - w / 2 - edgePadding;
+    const spawnDrift = settings.maxSpawnDrift || Math.floor(width * 0.33);
+    const desiredCenter = x + w / 2;
+    const clampedCenter = Math.max(
+      minCenter,
+      Math.min(
+        maxCenter,
+        Math.max(state.lastSpawnCenter - spawnDrift, Math.min(state.lastSpawnCenter + spawnDrift, desiredCenter))
+      )
+    );
+    x = clampedCenter - w / 2;
+    state.lastSpawnCenter = clampedCenter;
+
+    const beltDir = type === 'belt' ? (Math.random() < 0.5 ? -1 : 1) : 0;
+    const beltSpeed = type === 'belt' ? rand(settings.beltSpeedMin, settings.beltSpeedMax) : 0;
+
+    return { x, y, w, h, type, vx, deltaX: 0, beltDir, beltSpeed };
   }
 
   function initPlatforms(state) {
     const { settings, width, height } = state;
     state.platforms = [];
     state.spawnCounter = 0;
+    state.lastSpawnCenter = width / 2;
 
     let y = height - 70;
     state.platforms.push({
@@ -64,8 +104,11 @@ window.MapGenerator = (() => {
       h: settings.platformH,
       type: 'start',
       vx: 0,
-      deltaX: 0
+      deltaX: 0,
+      beltDir: 0,
+      beltSpeed: 0
     });
+    state.lastSpawnCenter = width / 2;
 
     for (let i = 1; i < settings.platformCount; i++) {
       y -= rand(settings.minPlatformGap, settings.maxPlatformGap);
@@ -107,8 +150,17 @@ window.MapGenerator = (() => {
   }
 
   function carryPlayerOnMovingPlatform(player) {
-    if (player.grounded && player.standingPlatform && player.standingPlatform.type === 'moving-square') {
-      player.x += player.standingPlatform.deltaX;
+    if (!player.grounded || !player.standingPlatform) return;
+
+    const platform = player.standingPlatform;
+
+    if (platform.type === 'moving-square') {
+      player.x += platform.deltaX;
+      return;
+    }
+
+    if (platform.type === 'belt') {
+      player.x += platform.beltDir * platform.beltSpeed;
     }
   }
 
@@ -126,6 +178,10 @@ window.MapGenerator = (() => {
     }
 
     for (const p of state.platforms) {
+      // Keep side-collisions only for chunky square obstacles.
+      // Thin platforms (ledge/center/icy/belt/start) should be passable from the side
+      // so they don't create unavoidable wall-like blockers.
+      if (p.type !== 'square' && p.type !== 'moving-square') continue;
       if (!intersectsPlayer(player, p)) continue;
 
       if (player.vx > 0 && prevX + player.w <= p.x) {
@@ -233,6 +289,63 @@ window.MapGenerator = (() => {
         ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
         const mid = p.y + p.h / 2;
         ctx.fillRect(p.x + 8, mid - 2, p.w - 16, 4);
+        continue;
+      }
+
+      if (p.type === 'icy') {
+        ctx.fillStyle = '#67e8f9';
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.fillStyle = '#a5f3fc';
+        ctx.fillRect(p.x, p.y, p.w, 4);
+        ctx.fillStyle = 'rgba(224, 242, 254, 0.6)';
+        ctx.fillRect(p.x + 10, p.y + p.h * 0.45, p.w - 20, 2);
+        continue;
+      }
+
+      if (p.type === 'belt') {
+        ctx.fillStyle = '#05070b';
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.strokeStyle = '#9ca3af';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(p.x + 1, p.y + 1, Math.max(0, p.w - 2), Math.max(0, p.h - 2));
+        ctx.clip();
+
+        ctx.fillStyle = '#374151';
+        ctx.fillRect(p.x, p.y, p.w, 3);
+
+        const stripeStep = 12;
+        const t = performance.now() * 0.03 * p.beltDir;
+        const offset = ((t % stripeStep) + stripeStep) % stripeStep;
+        ctx.fillStyle = 'rgba(250, 204, 21, 0.8)';
+        for (let sx = p.x - stripeStep + offset; sx < p.x + p.w; sx += stripeStep) {
+          ctx.fillRect(sx, p.y + 4, 6, Math.max(2, p.h - 6));
+        }
+
+        ctx.fillStyle = '#f9fafb';
+        const arrowY = p.y + p.h * 0.52;
+        const center = p.x + p.w / 2;
+        const arrowSpacing = 24;
+        for (let ax = center - arrowSpacing; ax <= center + arrowSpacing; ax += arrowSpacing) {
+          ctx.beginPath();
+          if (p.beltDir < 0) {
+            ctx.moveTo(ax + 4, arrowY - 4);
+            ctx.lineTo(ax - 4, arrowY);
+            ctx.lineTo(ax + 4, arrowY + 4);
+          } else {
+            ctx.moveTo(ax - 4, arrowY - 4);
+            ctx.lineTo(ax + 4, arrowY);
+            ctx.lineTo(ax - 4, arrowY + 4);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        ctx.restore();
+
         continue;
       }
 

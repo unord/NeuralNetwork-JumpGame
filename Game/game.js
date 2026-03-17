@@ -42,6 +42,7 @@ const settings = {
   chargePerFrame: 0.04,
   minDirectionalBoost: 2.4,
   maxDirectionalBoost: 7.2,
+  disableAirControlWhileJumping: true,
   airDrag: 0.985
 };
 
@@ -192,11 +193,15 @@ function update() {
     if (keys.left) player.vx = -player.speed;
     if (keys.right) player.vx = player.speed;
   } else {
+    if (settings.disableAirControlWhileJumping) {
+      player.vx *= settings.airDrag;
+    } else {
     if (keys.left) player.vx -= 0.12;
     if (keys.right) player.vx += 0.12;
     if (player.vx > player.speed) player.vx = player.speed;
     if (player.vx < -player.speed) player.vx = -player.speed;
     player.vx *= settings.airDrag;
+    }
   }
 
   const prevX = player.x;

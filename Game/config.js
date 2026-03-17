@@ -1,4 +1,6 @@
 window.GameConfig = {
+  aiPlaying: true,
+  playerControlled: true,
   canvasWidth: 520,
   canvasHeight: 700,
   wallPadding: 4,
@@ -10,8 +12,17 @@ window.GameConfig = {
   settings: {
     gravity: 0.52,
     platformCount: 8,
+    platformTypes: {
+      ledge: false,
+      center: true,
+      square: false,
+      movingSquare: false,
+      icy: false,
+      belt: false
+    },
     minPlatformGap: 88,
     maxPlatformGap: 128,
+    maxSpawnDrift: 170,
     platformWMin: 150,
     platformWMax: 260,
     platformH: 16,
@@ -21,11 +32,29 @@ window.GameConfig = {
     centerPlatformWMax: 160,
     squareSizeMin: 44,
     squareSizeMax: 66,
+    icyWMin: 120,
+    icyWMax: 210,
+    icyHMin: 10,
+    icyHMax: 20,
+    beltWMin: 90,
+    beltWMax: 170,
+    beltHMin: 12,
+    beltHMax: 18,
+    beltSpeedMin: 1.1,
+    beltSpeedMax: 2.1,
+    icyGroundAccel: 0.3,
+    icyGroundFriction: 0.94,
+    icyMaxSpeedMultiplier: 1.25,
     minJumpForce: 2.2,
     maxJumpForce: 15.5,
     chargePerFrame: 0.04,
     minDirectionalBoost: 2.4,
     maxDirectionalBoost: 7.2,
-    airDrag: 0.985
+    disableAirControlWhileJumping: false,
+    airDrag: 0.985,
+    idleBobAmplitude: 1.8,
+    idleBobSpeed: 0.005,
+    idleTiltAmplitude: 0.045,
+    idleTiltSpeed: 0.0032
   }
 };

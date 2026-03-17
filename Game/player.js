@@ -1,4 +1,20 @@
 window.PlayerController = (() => {
+  // Load player sprite images for directions
+  const spritePaths = {
+    left: './GFX/player_sprite_left.png',
+    right: './GFX/player_sprite_right.png',
+    forward: './GFX/player_sprite_forward.png'
+  };
+  const sprites = {};
+  let spritesLoaded = { left: false, right: false, forward: false };
+  for (const dir in spritePaths) {
+    const img = new window.Image();
+    img.src = spritePaths[dir];
+    img.onload = () => {
+      spritesLoaded[dir] = true;
+    };
+    sprites[dir] = img;
+  }
   function createPlayer(width, height, defaults) {
     return {
       x: width / 2 - defaults.w / 2,
@@ -13,7 +29,8 @@ window.PlayerController = (() => {
       jumpCharge: 0,
       facing: 1,
       lockPositionUntilRelease: false,
-      standingPlatform: null
+      standingPlatform: null,
+      chargeCarryVx: 0
     };
   }
 
@@ -28,6 +45,7 @@ window.PlayerController = (() => {
     player.facing = 1;
     player.lockPositionUntilRelease = false;
     player.standingPlatform = null;
+    player.chargeCarryVx = 0;
   }
 
   function updateFacing(player, keys) {
@@ -47,9 +65,30 @@ window.PlayerController = (() => {
     }
 
     if (player.grounded) {
-      player.vx = 0;
-      if (keys.left) player.vx = -player.speed;
-      if (keys.right) player.vx = player.speed;
+      const onIcy = player.standingPlatform && player.standingPlatform.type === 'icy';
+
+      if (onIcy) {
+        const accel = settings.icyGroundAccel || 0.3;
+        const friction = settings.icyGroundFriction || 0.94;
+        const maxSpeed = player.speed * (settings.icyMaxSpeedMultiplier || 1.25);
+
+        if (keys.left) player.vx -= accel;
+        if (keys.right) player.vx += accel;
+        if (!keys.left && !keys.right) player.vx *= friction;
+
+        if (player.vx > maxSpeed) player.vx = maxSpeed;
+        if (player.vx < -maxSpeed) player.vx = -maxSpeed;
+      } else {
+        player.vx = 0;
+        if (keys.left) player.vx = -player.speed;
+        if (keys.right) player.vx = player.speed;
+      }
+
+      return;
+    }
+
+    if (settings.disableAirControlWhileJumping) {
+      player.vx *= settings.airDrag;
       return;
     }
 
@@ -64,6 +103,7 @@ window.PlayerController = (() => {
     if (player.grounded && !player.isCharging) {
       player.isCharging = true;
       player.jumpCharge = 0;
+      player.chargeCarryVx = player.vx;
       player.lockPositionUntilRelease = true;
       player.vx = 0;
     }
@@ -78,12 +118,13 @@ window.PlayerController = (() => {
     const directionalBoost = settings.minDirectionalBoost + directionalRange * player.jumpCharge;
 
     player.vy = -jumpForce;
-    player.vx = directionalBoost * player.facing;
+    player.vx = player.chargeCarryVx + directionalBoost * player.facing;
     player.grounded = false;
     player.isCharging = false;
     player.jumpCharge = 0;
     player.lockPositionUntilRelease = false;
     player.standingPlatform = null;
+    player.chargeCarryVx = 0;
     return true;
   }
 
@@ -99,20 +140,33 @@ window.PlayerController = (() => {
       player.isCharging = false;
       player.jumpCharge = 0;
       player.lockPositionUntilRelease = false;
+      player.chargeCarryVx = 0;
     }
   }
 
   function drawPlayer(ctx, player) {
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(player.x, player.y, player.w, player.h);
+    let dir = 'forward';
+    if (player.facing < 0) dir = 'left';
+    else if (player.facing > 0) dir = 'right';
 
-    const eyeOffset = player.facing < 0 ? -2 : player.facing > 0 ? 2 : 0;
+    const idleSettings = window.GameConfig.settings;
+    const isIdle = player.grounded && !player.isCharging && Math.abs(player.vx) < 0.15 && Math.abs(player.vy) < 0.15;
+    const now = performance.now();
+    const bobOffset = isIdle ? Math.sin(now * idleSettings.idleBobSpeed) * idleSettings.idleBobAmplitude : 0;
+    const tiltOffset = isIdle ? Math.sin(now * idleSettings.idleTiltSpeed) * idleSettings.idleTiltAmplitude : 0;
 
-    ctx.fillStyle = '#0ea5e9';
-    ctx.fillRect(player.x + 5 + eyeOffset, player.y + 7, 6, 6);
-    ctx.fillRect(player.x + player.w - 11 + eyeOffset, player.y + 7, 6, 6);
-    ctx.fillStyle = '#22d3ee';
-    ctx.fillRect(player.x + 7, player.y + 22, player.w - 14, 4);
+    const sprite = sprites[dir];
+    ctx.save();
+    ctx.translate(player.x + player.w / 2, player.y + player.h / 2 + bobOffset);
+    ctx.rotate(tiltOffset);
+
+    if (spritesLoaded[dir]) {
+      ctx.drawImage(sprite, -player.w / 2, -player.h / 2, player.w, player.h);
+    } else {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(-player.w / 2, -player.h / 2, player.w, player.h);
+    }
+    ctx.restore();
 
     if (player.isCharging) {
       const barW = player.w;

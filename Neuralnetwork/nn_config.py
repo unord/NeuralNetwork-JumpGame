@@ -1,0 +1,10 @@
+"""Neural network runner settings."""
+
+AGENT_COUNT = 100
+TICK_SECONDS = 0.08
+EPISODE_SECONDS = 30
+GAME_URL = "http://127.0.0.1:5500/Game/main.html"
+MIN_MOVE_TICKS = 4
+MAX_MOVE_TICKS = 20
+MIN_JUMP_TICKS = 2
+MAX_JUMP_TICKS = 10
