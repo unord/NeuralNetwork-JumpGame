@@ -147,9 +147,10 @@ def run_generation(
         for _ in population
     ]
 
-    # Track start y and minimal y (highest reached) per agent
+    # Track start y, best grounded y (highest platform), and worst grounded y (lowest platform) per agent
     start_y = [None for _ in population]
-    min_y = [None for _ in population]
+    best_grounded_y = [None for _ in population]  # Minimum y while grounded (highest on screen)
+    worst_grounded_y = [None for _ in population]  # Maximum y while grounded (lowest on screen)
     for idx, agent_id in enumerate(agent_ids):
         st = api.get_player_state(agent_id)
         sy = None
@@ -159,7 +160,8 @@ def run_generation(
             # default spawn y (matches player.reset)
             sy = float(api.driver.execute_script('return window.GameConfig.canvasHeight - 120;'))
         start_y[idx] = sy
-        min_y[idx] = sy
+        best_grounded_y[idx] = sy   # Start at spawn position
+        worst_grounded_y[idx] = sy  # Start at spawn position
 
     end_at = time.time() + episode_seconds
     # Run the episode loop, stepping all agents each tick
@@ -184,12 +186,17 @@ def run_generation(
                 api.goright(agent_id, bool(action[1]))
                 api.holdjump(agent_id, bool(action[2]))
 
-            # Poll player state to update best height (min y)
+            # Poll player state to track highest and lowest grounded positions
             st = api.get_player_state(agent_id)
             if isinstance(st, dict) and 'y' in st:
                 y = float(st.get('y', start_y[idx]))
-                if min_y[idx] is None or y < min_y[idx]:
-                    min_y[idx] = y
+                is_grounded = st.get('grounded', False)
+                # Only update grounded positions if the agent is actually on a platform
+                if is_grounded:
+                    if best_grounded_y[idx] is None or y < best_grounded_y[idx]:
+                        best_grounded_y[idx] = y
+                    if worst_grounded_y[idx] is None or y > worst_grounded_y[idx]:
+                        worst_grounded_y[idx] = y
 
         time.sleep(TICK_SECONDS)
 
@@ -197,16 +204,23 @@ def run_generation(
     scored_networks = []
     all_episode_data = []
     for idx, agent_id in enumerate(agent_ids):
-        # Compute best height-based score: how far above start the agent reached
+        # Compute score: height gained minus penalty for going lower than start
         sy = start_y[idx] if start_y[idx] is not None else 0.0
-        my = min_y[idx] if min_y[idx] is not None else sy
-        best_height = max(0.0, sy - my)
+        gy = best_grounded_y[idx] if best_grounded_y[idx] is not None else sy
+        wy = worst_grounded_y[idx] if worst_grounded_y[idx] is not None else sy
+        
+        # Points for climbing up
+        height_gained = max(0.0, sy - gy)
+        # Penalty for landing on platforms below start
+        regression_penalty = max(0.0, wy - sy)
+        
+        best_height = height_gained - regression_penalty
 
         per_agent_data[idx]['final_score'] = best_height
         scored_networks.append((population[idx], best_height))
         all_episode_data.append(per_agent_data[idx])
         api.release_agent(agent_id)
-        print(f"  Agent {idx + 1}/{len(population)} Best height: {best_height:.1f}")
+        print(f"  Agent {idx + 1}/{len(population)} Score: +{height_gained:.1f} -{regression_penalty:.1f} = {best_height:.1f}")
 
     return scored_networks, all_episode_data
 

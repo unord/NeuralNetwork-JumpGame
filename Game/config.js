@@ -1,6 +1,6 @@
 window.GameConfig = {
   // Deterministic seed for map generation.
-  seed: 42,
+  seed: 113,
   aiPlaying: true,
   playerControlled: false,
   devDebug: false,
