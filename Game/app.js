@@ -19,6 +19,9 @@ function addPlayerAgent() {
   const player = window.PlayerController.createPlayer(W, H, playerDefaults);
   player.agentId = nextAgentId;
   player.isDead = false;
+  // Keep spawn position consistent for each episode
+  player.x = Math.floor(W / 2 - playerDefaults.w / 2);
+  player.score = 0;
   players.push(player);
   agentById.set(nextAgentId, player);
   nextAgentId += 1;
@@ -26,6 +29,8 @@ function addPlayerAgent() {
 }
 
 const mapState = window.MapGenerator.createState(W, H, settings);
+// Expose mapState so external scripts (tests / automation) can reinitialize the map
+window.mapState = mapState;
 
 let keyboardKeys = { left: false, right: false };
 let keys = { left: false, right: false };
@@ -43,6 +48,10 @@ function isPlayerControlled() {
   return !isAIPlaying() && window.GameConfig.playerControlled !== false;
 }
 
+function isDevDebugEnabled() {
+  return window.GameConfig.devDebug === true;
+}
+
 function resetGame() {
   if (players.length === 0 && !isAIPlaying()) {
     addPlayerAgent();
@@ -51,6 +60,16 @@ function resetGame() {
   for (const player of players) {
     window.PlayerController.resetPlayer(player, W, H);
     player.isDead = false;
+    player.score = 0;
+  }
+
+  // If a deterministic seed is configured, ensure MapGenerator uses it before initializing
+  if (window.GameConfig && window.GameConfig.seed != null && window.MapGenerator && typeof window.MapGenerator.setSeed === 'function') {
+    try {
+      window.MapGenerator.setSeed(window.GameConfig.seed);
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   window.MapGenerator.initPlatforms(mapState);
@@ -66,6 +85,9 @@ window.GameRuntime = {
     if (player) {
       window.PlayerController.resetPlayer(player, W, H);
       player.isDead = false;
+      // Keep spawn position consistent for each episode
+      player.x = Math.floor(W / 2 - playerDefaults.w / 2);
+      player.score = 0;
     }
     return agentId;
   },
@@ -78,10 +100,44 @@ window.GameRuntime = {
   getAgentCount() {
     return players.length;
   },
-  setAIPlaying(active = true) {
+  getPlayerState(agentId = 0) {
+    const id = Number(agentId);
+    const player = agentById.get(id);
+    if (!player) return null;
+
+    return {
+      id,
+      x: player.x,
+      y: player.y,
+      w: player.w,
+      h: player.h,
+      vx: player.vx,
+      vy: player.vy,
+      grounded: player.grounded,
+      isDead: Boolean(player.isDead),
+      score: player.score || 0,
+      standingPlatformType: player.standingPlatform ? player.standingPlatform.type : null
+    };
+  },
+  getWorldState() {
+    return {
+      width: W,
+      height: H,
+      wallPadding,
+      platforms: mapState.platforms.map((platform) => ({
+        x: platform.x,
+        y: platform.y,
+        w: platform.w,
+        h: platform.h,
+        type: platform.type
+      }))
+    };
+  },
+  setAIPlaying(active = true, devDebug = false) {
     const enabled = Boolean(active);
     window.GameConfig.aiPlaying = enabled;
     window.GameConfig.playerControlled = !enabled;
+    window.GameConfig.devDebug = Boolean(devDebug);
 
     if (enabled) {
       players.length = 0;
@@ -94,6 +150,14 @@ window.GameRuntime = {
       score = 0;
       scoreEl.textContent = score;
       gameOver = false;
+      // Ensure MapGenerator uses configured seed before initializing
+      if (window.GameConfig && window.GameConfig.seed != null && window.MapGenerator && typeof window.MapGenerator.setSeed === 'function') {
+        try {
+          window.MapGenerator.setSeed(window.GameConfig.seed);
+        } catch (e) {
+          /* ignore */
+        }
+      }
       window.MapGenerator.initPlatforms(mapState);
       return true;
     }
@@ -103,6 +167,10 @@ window.GameRuntime = {
       resetGame();
     }
     return false;
+  },
+  setDevDebug(active = false) {
+    window.GameConfig.devDebug = Boolean(active);
+    return window.GameConfig.devDebug;
   }
 };
 
@@ -164,6 +232,9 @@ function update() {
   window.MapGenerator.scrollMapAndRespawn(mapState, leader, (added) => {
     score += added;
     scoreEl.textContent = score;
+    if (leader) {
+      leader.score = (leader.score || 0) + added;
+    }
   });
 
   const scrollDelta = leader.y - leaderYBeforeScroll;
@@ -190,6 +261,55 @@ function drawWalls() {
   ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
   ctx.fillRect(0, 0, wallPadding, H);
   ctx.fillRect(W - wallPadding, 0, wallPadding, H);
+}
+
+function drawDebugRaycasts() {
+  if (!isDevDebugEnabled()) return;
+  if (!window.RaycastAPI || typeof window.RaycastAPI.castRays !== 'function') return;
+
+  ctx.save();
+  ctx.lineWidth = 1.4;
+
+  for (const player of players) {
+    if (player.isDead) continue;
+
+    const rays = window.RaycastAPI.castRays(player.agentId, 16, 460);
+    if (!Array.isArray(rays) || rays.length === 0) continue;
+
+    const originX = player.x + player.w / 2;
+    const originY = player.y + player.h / 2;
+
+    for (const ray of rays) {
+      if (!Array.isArray(ray) || ray.length < 2) continue;
+      const angle = Number(ray[0]);
+      const distance = Number(ray[1]);
+      const hitType = ray[2];
+      if (!Number.isFinite(angle) || !Number.isFinite(distance)) continue;
+
+      const endX = originX + Math.cos(angle) * distance;
+      const endY = originY + Math.sin(angle) * distance;
+
+      if (hitType && String(hitType).startsWith('wall')) {
+        ctx.strokeStyle = 'rgba(248, 113, 113, 0.82)';
+      } else if (hitType === 'moving-square') {
+        ctx.strokeStyle = 'rgba(167, 139, 250, 0.82)';
+      } else {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.72)';
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(originX, originY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(250, 204, 21, 0.95)';
+    ctx.beginPath();
+    ctx.arc(originX, originY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 }
 
 function drawGameOver() {
@@ -220,6 +340,8 @@ function render() {
     if (player.isDead) continue;
     window.PlayerController.drawPlayer(ctx, player);
   }
+
+  drawDebugRaycasts();
 
   if (gameOver) drawGameOver();
 }

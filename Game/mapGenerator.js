@@ -1,6 +1,23 @@
 window.MapGenerator = (() => {
+  let seed = null;
+  let seedRandom = null;
+  let initialSeed = null;
+
+  // Seeded random number generator (linear congruential generator)
+  function seededRandom() {
+    if (seedRandom === null) return Math.random();
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  }
+
+  function setSeed(newSeed) {
+    seed = Number(newSeed);
+    initialSeed = Number(newSeed);
+    seedRandom = newSeed;
+  }
+
   function rand(min, max) {
-    return Math.random() * (max - min) + min;
+    return seededRandom() * (max - min) + min;
   }
 
   function createState(width, height, settings) {
@@ -32,7 +49,7 @@ window.MapGenerator = (() => {
   function makePlatform(state, y) {
     const { settings, width, spawnCounter } = state;
     const enabledTypes = getEnabledSpawnTypes(settings);
-    const type = enabledTypes[Math.floor(Math.random() * enabledTypes.length)];
+    const type = enabledTypes[Math.floor(seededRandom() * enabledTypes.length)];
     state.spawnCounter += 1;
 
     let w;
@@ -47,7 +64,7 @@ window.MapGenerator = (() => {
     } else if (type === 'moving-square') {
       w = rand(settings.squareSizeMin + 4, settings.squareSizeMax + 6);
       x = rand(18, width - w - 18);
-      vx = (Math.random() < 0.5 ? -1 : 1) * rand(0.85, 1.45);
+      vx = (seededRandom() < 0.5 ? -1 : 1) * rand(0.85, 1.45);
       h = w;
     } else if (type === 'center') {
       w = rand(settings.centerPlatformWMin, settings.centerPlatformWMax);
@@ -84,17 +101,34 @@ window.MapGenerator = (() => {
     x = clampedCenter - w / 2;
     state.lastSpawnCenter = clampedCenter;
 
-    const beltDir = type === 'belt' ? (Math.random() < 0.5 ? -1 : 1) : 0;
+    const beltDir = type === 'belt' ? (seededRandom() < 0.5 ? -1 : 1) : 0;
     const beltSpeed = type === 'belt' ? rand(settings.beltSpeedMin, settings.beltSpeedMax) : 0;
 
     return { x, y, w, h, type, vx, deltaX: 0, beltDir, beltSpeed };
   }
 
   function initPlatforms(state) {
+    // Reset LCG seed to initial seed so platform generation is deterministic per init
+    if (initialSeed !== null) {
+      seed = Number(initialSeed);
+    }
     const { settings, width, height } = state;
     state.platforms = [];
     state.spawnCounter = 0;
     state.lastSpawnCenter = width / 2;
+
+    // Add ground platform at the very bottom
+    state.platforms.push({
+      x: 0,
+      y: height - 20,
+      w: width,
+      h: 20,
+      type: 'ground',
+      vx: 0,
+      deltaX: 0,
+      beltDir: 0,
+      beltSpeed: 0
+    });
 
     let y = height - 70;
     state.platforms.push({
@@ -364,6 +398,7 @@ window.MapGenerator = (() => {
     resolveHorizontalCollisions,
     resolveVerticalCollisions,
     scrollMapAndRespawn,
-    drawPlatforms
+    drawPlatforms,
+    setSeed
   };
 })();

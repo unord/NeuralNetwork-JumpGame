@@ -1,6 +1,9 @@
 window.GameConfig = {
+  // Deterministic seed for map generation.
+  seed: 42,
   aiPlaying: true,
-  playerControlled: true,
+  playerControlled: false,
+  devDebug: false,
   canvasWidth: 520,
   canvasHeight: 700,
   wallPadding: 4,

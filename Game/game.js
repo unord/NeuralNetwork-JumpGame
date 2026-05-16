@@ -109,6 +109,16 @@ function initPlatforms() {
   spawnCounter = 0;
   let y = H - 70;
 
+  // Add ground platform at the very bottom
+  platforms.push({
+    x: 0,
+    y: H - 20,
+    w: W,
+    h: 20,
+    type: 'ground',
+    vx: 0
+  });
+
   platforms.push({
     x: W / 2 - 55,
     y,
