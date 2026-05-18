@@ -5,6 +5,7 @@ import pickle
 import os
 
 
+
 class Layer_Dense:
     """Fully connected dense layer."""
     
@@ -80,12 +81,12 @@ class Activation_Linear:
 class NeuralNetwork:
     """Neural network for controlling game agents."""
     
-    def __init__(self, input_size, hidden_size=64, output_size=3, learning_rate=0.01):
+    def __init__(self, input_size, hidden_size=64, output_size=4, learning_rate=0.01):
         """
         Args:
             input_size: Number of ray inputs (ray_count * 3)
             hidden_size: Number of neurons in hidden layer
-            output_size: Number of outputs (3: left/right/jump)
+            output_size: Number of outputs (4: left/right/do_nothing/jump)
             learning_rate: Learning rate for weight updates
         """
         self.input_size = input_size
@@ -147,15 +148,22 @@ class NeuralNetwork:
         with open(filepath, 'wb') as f:
             pickle.dump(weights_data, f)
     
-    def load(self, filepath):
-        """Load network weights from file."""
+    @classmethod
+    def load(cls, filepath):
+        """Load network weights from file and return a new network instance."""
         with open(filepath, 'rb') as f:
             weights_data = pickle.load(f)
-        
-        self.dense1.weights = weights_data['dense1_weights']
-        self.dense1.biases = weights_data['dense1_biases']
-        self.dense2.weights = weights_data['dense2_weights']
-        self.dense2.biases = weights_data['dense2_biases']
+
+        new_nn = cls(
+            weights_data['input_size'],
+            weights_data['hidden_size'],
+            weights_data['output_size'],
+        )
+        new_nn.dense1.weights = weights_data['dense1_weights']
+        new_nn.dense1.biases = weights_data['dense1_biases']
+        new_nn.dense2.weights = weights_data['dense2_weights']
+        new_nn.dense2.biases = weights_data['dense2_biases']
+        return new_nn
     
     def copy(self):
         """Create a deep copy of this network."""
@@ -186,35 +194,46 @@ class NeuralNetwork:
 
 
 def flatten_rays(rays):
-    """
-    Flatten ray data into input vector.
-    
-    Args:
-        rays: List of [angle_rad, distance, object_type] for each ray
-    
-    Returns:
-        Flattened numpy array
+    """Flatten numeric ray data into one NN input vector.
+
+    Expected ray format after normalization:
+        [angle_norm, distance_norm, hit_dx_norm, hit_dy_norm]
     """
     return np.array(rays, dtype=np.float32).flatten()
 
 
-def normalize_ray_data(rays, max_distance=900):
-    """Normalize ray data to 0-1 range for better training."""
-    normalized = []
-    for ray in rays:
-        angle, distance, obj_type = ray
-        # Normalize angle to 0-1 (from -pi to pi)
-        norm_angle = (angle + np.pi) / (2 * np.pi)
-        # Normalize distance to 0-1
-        norm_distance = min(distance / max_distance, 1.0)
-        # Normalize object type (convert to float if string)
-        try:
-            obj_type_float = float(obj_type)
-        except (ValueError, TypeError):
-            obj_type_float = 0.0
-        norm_obj_type = obj_type_float / 10.0 if obj_type_float >= 0 else 0.0
-        
-        normalized.append([norm_angle, norm_distance, norm_obj_type])
-    
-    return normalized
+def normalize_ray_data(rays, max_distance=1200):
+    """Normalize ray data to stable numeric input.
 
+    JS ray format:
+        [angle_radians, distance, hit_x, hit_y]
+
+    NN normalized format:
+        [angle_0_to_1, distance_0_to_1, hit_x_scaled, hit_y_scaled]
+
+    hit_x_scaled / hit_y_scaled are absolute world coordinates scaled by max_distance.
+    This keeps the platform/hit position information without using a string platform type.
+    """
+    normalized = []
+
+    for ray in rays:
+        if not isinstance(ray, (list, tuple)) or len(ray) < 2:
+            normalized.append([0.0, 1.0, 0.0, 0.0])
+            continue
+
+        angle = float(ray[0])
+        distance = float(ray[1])
+        hit_x = float(ray[2]) if len(ray) > 2 and ray[2] is not None else 0.0
+        hit_y = float(ray[3]) if len(ray) > 3 and ray[3] is not None else 0.0
+
+        # JS angles are 0..2pi. Modulo keeps this safe even if a negative angle appears.
+        norm_angle = (angle % (2 * np.pi)) / (2 * np.pi)
+        norm_distance = min(max(distance / max_distance, 0.0), 1.0)
+
+        # Platform/hit position info, kept numeric and bounded.
+        norm_hit_x = max(min(hit_x / max_distance, 4.0), -4.0)
+        norm_hit_y = max(min(hit_y / max_distance, 4.0), -4.0)
+
+        normalized.append([norm_angle, norm_distance, norm_hit_x, norm_hit_y])
+
+    return normalized

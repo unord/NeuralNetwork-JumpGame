@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Jump Game Starter</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    #info {
+      position: fixed;
+      left: 8px;
+      top: 8px;
+      background: rgba(0, 0, 0, .55);
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">A/D move · Space jump · R reset</div>
+  <canvas id="game"></canvas>
+
+  <script src="line.js"></script>
+  <script src="level.js"></script>
+  <script src="level_setup_function.js"></script>
+  <script src="camera.js"></script>
+  <script src="player.js"></script>
+  <script src="sketch.js"></script>
+  <script src="raycast.js"></script>
+  <script src="API.js"></script>
+</body>
+</html>
